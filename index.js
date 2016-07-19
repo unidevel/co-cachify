@@ -46,7 +46,9 @@ function enableCache(obj, method, def){
   var methods = config.methods;
   var cacheDef = Object.assign({}, def);
   if ( !def.ttl ) cacheDef.ttl = this.config.ttl;
-  if ( !def.hash ) cacheDef.hash = function(args){ return args[0] || ''; }
+  if ( !def.hash ) cacheDef.hash = function(arg0){
+    return arg0 || '';
+  }
   var adapter = this.adapter;
   cacheDef.func = func;
   cacheDef.name = cacheKey(config.name, method);

@@ -1,6 +1,6 @@
 {
   "name": "co-cachify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Simple cache manager with minimal refactor of your code",
   "main": "index.js",
   "scripts": {

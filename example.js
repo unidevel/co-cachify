@@ -17,6 +17,12 @@ class Test {
     var value = yield co_sleep(data);
     return value;
   }
+
+  *getWord(word){
+    var data =  'Hello '+word;
+    var value = yield co_sleep(data);
+    return value;
+  }
 }
 
 var test1 = new Test("test1");
@@ -25,12 +31,21 @@ var cachedTest1 = cm.cache(test1)
   .enable('getName')
   .done();
 
+var now = new Date().getTime();
+function log(value){
+  var ts = new Date().getTime();
+  console.log('Cost '+(ts - now)+'ms', value);
+  now = ts;
+}
+
 co(function*(){
-  var value;
-  value = yield cachedTest1.getName("value1");
-  console.log(value);
-  value = yield cachedTest1.getName("value1");
-  console.log(value);
+  for ( var i = 0; i < 10; ++i ) {
+    log(yield cachedTest1.getName("value1"));
+  }
+  log(yield cachedTest1.getName("value2"));
+  log(yield cachedTest1.getName("value2"));
+  log(yield cachedTest1.getWord("word1"));
+  log(yield cachedTest1.getWord("word1"));
 }).catch(function(err){
   console.error(err, err.stack);
 })
