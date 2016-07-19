@@ -1,14 +1,33 @@
 {
   "name": "co-cachify",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Simple cache manager with minimal refactor of your code",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "author": "unidevel",
   "license": "ISC",
   "dependencies": {
     "harmony-reflect": "^1.4.6"
-  }
+  },
+  "files": [
+    "*.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unidevel/co-cachify.git"
+  },
+  "keywords": [
+    "cache",
+    "co-cachify",
+    "cachify"
+  ],
+  "engines": {
+    "node": ">= 4.0.0"
+  },
+  "bugs": {
+    "url": "https://github.com/unidevel/co-cachify/issues"
+  },
+  "homepage": "https://github.com/unidevel/co-cachify"
 }
