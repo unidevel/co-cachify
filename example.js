@@ -12,23 +12,29 @@ class Test {
     this.prefix = prefix || 'noname';
   }
 
-  *getName(postfix){
+  *simpleTest(postfix){
     var data =  this.prefix +'.'+postfix;
     var value = yield co_sleep(data);
     return value;
   }
 
-  *getWord(word){
-    var data =  'Hello '+word;
+  *complexTest(args){
+    var data =  'Name: '+args.firstName+'.'+args.lastName;
     var value = yield co_sleep(data);
     return value;
   }
 }
 
 var test1 = new Test("test1");
-
-var cachedTest1 = cm.cache(test1)
-  .enable('getName')
+var cachedTest1Meta = cm.cache(test1)
+var cachedTest1 = cachedTest1Meta
+  .enable('simpleTest')
+  .enable('complexTest', {
+    ttl: 10,
+    hash: function(args){
+      return args.firstName+'.'+args.lastName
+    }
+  })
   .done();
 
 var now = new Date().getTime();
@@ -39,13 +45,21 @@ function log(value){
 }
 
 co(function*(){
-  for ( var i = 0; i < 10; ++i ) {
-    log(yield cachedTest1.getName("value1"));
+  var count = 12;
+  for ( var i = 0; i < count; ++i ) {
+    if ( i == Math.floor(count / 2) ) {
+      console.log('invalid');
+      log(yield cachedTest1Meta.invalid().simpleTest("value1"));
+      continue;
+    }
+    log(yield cachedTest1.simpleTest("value1"));
   }
-  log(yield cachedTest1.getName("value2"));
-  log(yield cachedTest1.getName("value2"));
-  log(yield cachedTest1.getWord("word1"));
-  log(yield cachedTest1.getWord("word1"));
+  log(yield cachedTest1.complexTest({firstName:'Z', lastName:'L'}));
+  log(yield cachedTest1.complexTest({firstName:'Z', lastName:'L'}));
+  log(yield cachedTest1.complexTest({firstName:'X', lastName:'L'}));
+  cachedTest1Meta.disable();
+  log(yield cachedTest1.simpleTest("value1"));
+  log(yield cachedTest1.simpleTest("value1"));
 }).catch(function(err){
   console.error(err, err.stack);
 })

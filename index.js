@@ -2,6 +2,7 @@
 var Reflect = require('harmony-reflect');
 var registry = new WeakMap();
 const DEFAULT_TTL = 60 * 1000;
+
 class MemoryCacheAdapter {
   constructor(){
     this.cache = {};
@@ -23,13 +24,22 @@ class MemoryCacheAdapter {
     };
     this.cache[key] = data;
   }
+
+  *delete(key){
+    delete this.cache[key];
+    return;
+  }
 }
 
 var cacheHandle = {
-  get: function(target, name){
+  get: function(target, name, receiver){
     var config = registry.get(target);
-    var proxyMethod = config.methods[name];
-    return proxyMethod || target[name];
+    var cacheDef = config.methods[name];
+    if (config.clearCacheOnNextCall && cacheDef) {
+      cacheDef.clearCacheOnNextCall = true;
+      delete config.clearCacheOnNextCall;
+    }
+    return (cacheDef && cacheDef.proxy) || target[name];
   }
 }
 
@@ -45,6 +55,7 @@ function enableCache(obj, method, def){
   if ( typeof func != 'function' ) throw new Error('Function ['+method+'] not found on target!');
   var methods = config.methods;
   var cacheDef = Object.assign({}, def);
+  methods[method] = cacheDef;
   if ( !def.ttl ) cacheDef.ttl = this.config.ttl;
   if ( !def.hash ) cacheDef.hash = function(arg0){
     return arg0 || '';
@@ -52,19 +63,45 @@ function enableCache(obj, method, def){
   var adapter = this.adapter;
   cacheDef.func = func;
   cacheDef.name = cacheKey(config.name, method);
-  methods[method] = function*(){
+  cacheDef.proxy = function*(){
     var hash = cacheDef.hash.apply(obj, arguments);
     var key = cacheKey(cacheDef.name, hash);
-    var value = yield adapter.get(key);
+    var deleted = false;
+    var value = null;
+    if ( cacheDef.clearCacheOnNextCall ) {
+      delete cacheDef.clearCacheOnNextCall;
+      yield adapter.delete(key);
+      deleted = true;
+    }
+    else {
+      value = yield adapter.get(key);
+    }
     if ( value == null ) {
       var thunk = func.apply(obj, arguments);
       value = yield thunk;
       if ( value != null ) {
         yield adapter.set(key, value, cacheDef.ttl);
       }
+      else {
+        if ( !deleted ) yield adapter.delete(key);
+      }
     }
     return value;
   }
+}
+
+function disableCache(obj, method){
+  var config = registry.get(obj);
+  if ( !config ) return;
+  if ( !method ) {
+    //registry.delete(obj);
+    config.methods = {};
+    return config;
+  }
+  var methods = config.methods;
+  var methodConfig = methods[method];
+  delete methods[method];
+  return methodConfig;
 }
 
 
@@ -101,6 +138,14 @@ class CacheManager {
         enableCache.call(that, obj, method, def);
         return this;
       },
+      invalid: function(){
+        config.clearCacheOnNextCall = true;
+        return proxy;
+      },
+      disable: function(method){
+        disableCache.call(that, obj, method);
+        return this;
+      },
       done: function(){
         return proxy;
       }
@@ -109,6 +154,7 @@ class CacheManager {
   }
 }
 
-module.exports = function(args){
-  return new CacheManager(args);
+module.exports = function getCachifyInstance(args){
+  var instance = new CacheManager(args);
+  return instance;
 }
