@@ -10,12 +10,23 @@ var co_sleep = function(value){
 class Test {
   constructor(prefix){
     this.prefix = prefix || 'noname';
+    this.data = {};
   }
 
   *simpleTest(postfix){
     var data =  this.prefix +'.'+postfix;
     var value = yield co_sleep(data);
     return value;
+  }
+
+  *getData(id){
+    var data = this.data[id];
+    var value = yield co_sleep(data);
+    return value;
+  }
+
+  *setData(id, value){
+    this.data[id] = value;
   }
 
   *complexTest(args){
@@ -35,6 +46,8 @@ var cachedTest1 = cachedTest1Meta
       return args.firstName+'.'+args.lastName
     }
   })
+  .enable('getData', 'data')
+  .update('setData', 'data')
   .done();
 
 var now = new Date().getTime();
@@ -45,6 +58,14 @@ function log(value){
 }
 
 co(function*(){
+  yield cachedTest1.setData('id1', 'value1');
+  log(yield cachedTest1.getData('id1'));
+  log(yield cachedTest1.getData('id1'));
+  yield cachedTest1.setData('id1', 'value2');
+  log(yield cachedTest1.getData('id1'));
+  log(yield cachedTest1.getData('id1'));
+
+
   var count = 12;
   for ( var i = 0; i < count; ++i ) {
     if ( i == Math.floor(count / 2) ) {
@@ -54,8 +75,8 @@ co(function*(){
     }
     log(yield cachedTest1.simpleTest("value1"));
   }
-  log(yield cachedTest1.complexTest({firstName:'Z', lastName:'L'}));
-  log(yield cachedTest1.complexTest({firstName:'Z', lastName:'L'}));
+  log(yield cachedTest1.complexTest({firstName:'A', lastName:'B'}));
+  log(yield cachedTest1.complexTest({firstName:'A', lastName:'B'}));
   log(yield cachedTest1.complexTest({firstName:'X', lastName:'L'}));
   cachedTest1Meta.disable();
   log(yield cachedTest1.simpleTest("value1"));

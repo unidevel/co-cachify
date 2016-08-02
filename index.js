@@ -1,8 +1,13 @@
 'use strict';
+var debug = require('debug')('co-cachify');
 var Reflect = require('harmony-reflect');
+if (typeof Proxy === "undefined") {
+  throw new Error("proxies not supported on this platform. On v8/node/iojs, make sure to pass the --harmony_proxies flag");
+}
 var registry = new WeakMap();
 const DEFAULT_TTL = 60 * 1000;
-
+const TYPE_GET = 0;
+const TYPE_UPDATE = 1;
 class MemoryCacheAdapter {
   constructor(){
     this.cache = {};
@@ -10,6 +15,7 @@ class MemoryCacheAdapter {
 
   *get(key){
     var data = this.cache[key];
+    debug('cache get', key, data);
     if ( !data ) return null;
     var duration = new Date().getTime() - data.timestamp;
     if ( duration > data.ttl ) return null;
@@ -27,6 +33,7 @@ class MemoryCacheAdapter {
 
   *delete(key){
     delete this.cache[key];
+    debug('cache delete', key, this.cache[key]);
     return;
   }
 }
@@ -47,8 +54,13 @@ function cacheKey(){
   return Array.prototype.join.call(arguments, '/');
 }
 
-function enableCache(obj, method, def){
-  def = def || {};
+function _configCache(self, obj, method, def, type){
+  if ( typeof(def) == 'string' ){
+    def = {name: def};
+  }
+  else {
+    def = def || {};
+  }
   var config = registry.get(obj);
   if ( typeof method != 'string' ) throw new Error('Enable cache must provide method name!');
   var func = obj[method];
@@ -56,39 +68,63 @@ function enableCache(obj, method, def){
   var methods = config.methods;
   var cacheDef = Object.assign({}, def);
   methods[method] = cacheDef;
-  if ( !def.ttl ) cacheDef.ttl = this.config.ttl;
+  if ( !def.ttl ) cacheDef.ttl = self.config.ttl;
   if ( !def.hash ) cacheDef.hash = function(arg0){
     return arg0 || '';
   }
-  var adapter = this.adapter;
+  var adapter = self.adapter;
   cacheDef.func = func;
-  cacheDef.name = cacheKey(config.name, method);
-  cacheDef.proxy = function*(){
-    var hash = cacheDef.hash.apply(obj, arguments);
-    var key = cacheKey(cacheDef.name, hash);
-    var deleted = false;
-    var value = null;
-    if ( cacheDef.clearCacheOnNextCall ) {
-      delete cacheDef.clearCacheOnNextCall;
-      yield adapter.delete(key);
-      deleted = true;
-    }
-    else {
-      value = yield adapter.get(key);
-    }
-    if ( value == null ) {
-      var thunk = func.apply(obj, arguments);
-      value = yield thunk;
-      if ( value != null ) {
-        yield adapter.set(key, value, cacheDef.ttl);
+  cacheDef.name = def.name?cacheKey(config.name, def.name):cacheKey(config.name, method);
+  if ( type != TYPE_UPDATE ) {
+    cacheDef.proxy = function*(){
+      var hash = cacheDef.hash.apply(obj, arguments);
+      var key = cacheKey(cacheDef.name, hash);
+      var deleted = false;
+      var value = null;
+      if ( cacheDef.clearCacheOnNextCall ) {
+        delete cacheDef.clearCacheOnNextCall;
+        yield adapter.delete(key);
+        deleted = true;
       }
       else {
-        if ( !deleted ) yield adapter.delete(key);
+        value = yield adapter.get(key);
       }
+      debug('get', hash, key, value);
+      if ( value == null ) {
+        var thunk = func.apply(obj, arguments);
+        value = yield thunk;
+        if ( value != null ) {
+          yield adapter.set(key, value, cacheDef.ttl);
+        }
+        else {
+          if ( !deleted ) yield adapter.delete(key);
+        }
+      }
+      return value;
     }
-    return value;
+  }
+  else {
+    cacheDef.proxy = function*(){
+      var hash = cacheDef.hash.apply(obj, arguments);
+      var key = cacheKey(cacheDef.name, hash);
+      var value = null;
+      var thunk = func.apply(obj, arguments);
+      value = yield thunk;
+      debug('update', hash, key);
+      yield adapter.delete(key);
+      return value;
+    }
   }
 }
+
+function enableCache(self, obj, method, def){
+  return _configCache(self, obj, method, def, TYPE_GET);
+}
+
+function updateCache(self, obj, method, def){
+  return _configCache(self, obj, method, def, TYPE_UPDATE);
+}
+
 
 function disableCache(obj, method){
   var config = registry.get(obj);
@@ -121,7 +157,7 @@ class CacheManager {
     }
     if ( !cacheName ) {
       var proto = Object.getPrototypeOf(obj);
-      cacheName = proto && proto.constructor && proto.constructor.name;
+      cacheName = proto && proto.constructor && (proto.constructor.name || proto.constructor.displayName);
     }
     if ( typeof cacheName != 'string' ) {
       throw new Error('cache name must be provided!')
@@ -135,8 +171,26 @@ class CacheManager {
     registry.set(obj, config);
     var register = {
       enable: function(method, def){
-        enableCache.call(that, obj, method, def);
+        enableCache(that, obj, method, def);
         return this;
+      },
+      update: function(method, def){
+        updateCache(that, obj, method, def);
+        return this;
+      },
+      clear: function*(method, hash){
+        var valueKey = cacheKey(cacheDef.name, hash);
+        yield adapter.delete(valueKey);
+        return this;
+      },
+      set: function*(method, hash, value){
+        var key = cacheKey(cacheDef.name, hash);
+        if ( value == null ) {
+          yield adapter.delete(key);
+        }
+        else {
+          yield adapter.set(key, value, cacheDef.ttl);
+        }
       },
       invalid: function(){
         config.clearCacheOnNextCall = true;
